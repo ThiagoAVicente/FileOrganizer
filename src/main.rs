@@ -5,10 +5,11 @@ mod log;
 mod organizer;
 mod restore;
 
-use args::Args;
+use crate::args::Args;
 use log::{Log, write_log};
 use organizer::{organize_files, remove_empty_directories};
 use restore::restore_state;
+use std::sync::{Arc, Mutex};
 
 fn main() {
     let args = Args::parse();
@@ -42,8 +43,13 @@ fn main() {
                 return;
             }
             let abs_directory = args_directory.canonicalize().unwrap();
-            let mut log = Log::new(abs_directory.clone());
-            organize_files(&abs_directory, &mut log);
+            
+            // log file inside a mutex for parallel processing
+            let log = Arc::new(Mutex::new(Log::new(abs_directory.clone())));
+            
+            organize_files(&abs_directory, log.clone());
+            
+            let mut log = Arc::try_unwrap(log).expect("Log still has multiple owners").into_inner().unwrap();
             remove_empty_directories(&abs_directory, &mut log);
             write_log(&mut log);
         }
