@@ -22,7 +22,8 @@ fn main() {
                 eprintln!("Log file does not exist: {}", log_file.display());
                 return;
             }
-            restore_state(&log_file);
+            let abs_log_file = log_file.canonicalize().unwrap();
+            restore_state(&abs_log_file);
         }
         false => {
             // directory must exist and be a directory
@@ -40,9 +41,10 @@ fn main() {
                 );
                 return;
             }
-            let mut log = Log::new(args_directory.clone());
-            organize_files(&args_directory, &mut log);
-            remove_empty_directories(&args_directory, &mut log);
+            let abs_directory = args_directory.canonicalize().unwrap();
+            let mut log = Log::new(abs_directory.clone());
+            organize_files(&abs_directory, &mut log);
+            remove_empty_directories(&abs_directory, &mut log);
             write_log(&mut log);
         }
     }
