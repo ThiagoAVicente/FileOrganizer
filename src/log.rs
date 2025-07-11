@@ -1,4 +1,5 @@
 use std::fs;
+use crate::logging::{log_info, log_error};
 use std::path::PathBuf;
 
 #[derive(Debug)]
@@ -38,10 +39,14 @@ impl Log {
         }
     }
     pub fn create_directory(&mut self, path: PathBuf) {
-        self.created_directories.push(path);
+        if !self.created_directories.contains(&path) {
+            self.created_directories.push(path);
+        }
     }
     pub fn remove_directory(&mut self, path: PathBuf) {
-        self.removed_directories.push(path);
+        if !self.removed_directories.contains(&path) {
+            self.removed_directories.push(path);
+        }
     }
     pub fn move_file(&mut self, old_path: PathBuf, new_path: PathBuf) {
         self.moves.push(LogEntry::new(old_path, new_path));
@@ -58,6 +63,21 @@ impl Log {
     }
     pub fn created_directories(&self) -> &Vec<PathBuf> {
         &self.created_directories
+    }
+    
+    pub fn to_string(&self) -> String {
+        let mut log_content = String::new();
+        log_content.push_str(&self.base_directory.to_string_lossy());
+        for dir in &self.created_directories {
+            log_content.push_str(&format!("\n+ {}", dir.display()));
+        }
+        for entry in &self.removed_directories {
+            log_content.push_str(&format!("\n{}", entry.display()));
+        }
+        for entry in &self.moves {
+            log_content.push_str(&format!("\n{}", entry.to_string()));
+        }
+        log_content
     }
 }
 
@@ -108,26 +128,10 @@ pub fn log_from_file(log_file: &PathBuf) -> Log {
 /// * 'log' - the log to write to a file
 pub fn write_log(log: &mut Log) {
     let log_file = log.base_directory.join(".file_organizer_log");
-    let mut log_content = String::new();
-
-    log_content.push_str(log.base_directory().to_str().unwrap());
-    // created directories
-    for dir in log.created_directories() {
-        log_content.push_str(&format!("\n+ {}", dir.display()));
-    }
-    // removed directories
-    for entry in log.removed_directories() {
-        log_content.push_str(&format!("\n{}", entry.display()));
-    }
-    
-    // moves
-    for entry in log.moves() {
-        log_content.push_str(&format!("\n{}", entry.to_string()));
-    }
-
+    let log_content = log.to_string();
     // write to the file
     match fs::write(&log_file, log_content) {
-        Ok(_) => println!("Log written to {}", log_file.display()),
-        Err(e) => eprintln!("Failed to write log file {}: {}", log_file.display(), e),
+        Ok(_) =>  log_info(&format!("Log written to {}", log_file.display())),
+        Err(e) => log_error(&format!("Failed to write log file {}: {}", log_file.display(), e)),
     }
 }

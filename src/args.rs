@@ -11,4 +11,8 @@ pub struct Args {
     /// optional log file to restore the state from
     #[arg(short, long)]
     pub restore: Option<PathBuf>,
+
+    // quiet mode, no output
+    #[arg(short, long, default_value_t = false)]
+    pub quiet: bool,
 }

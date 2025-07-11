@@ -1,4 +1,6 @@
-use crate::log::{Log};
+use crate::confs::LOG_FILE_NAME;
+use crate::log::{Log, log_from_file};
+use crate::logging::{log_error, log_info};
 use rayon::prelude::*;
 use std::fs;
 use std::path::Path;
@@ -29,11 +31,15 @@ pub fn remove_empty_directories(directory: &PathBuf, log: &mut Log) {
                 // remove the empty directory
                 match fs::remove_dir(path) {
                     Ok(_) => {
-                        println!("Removed empty directory: {}", path.display());
+                        log_info(&format!("Removed empty directory: {}", path.display()));
                         // push the removed directory to the log
                         log.remove_directory(path.to_path_buf());
                     }
-                    Err(e) => eprintln!("Failed to remove directory {}: {}", path.display(), e),
+                    Err(e) => log_error(&format!(
+                        "Failed to remove directory {}: {}",
+                        path.display(),
+                        e
+                    )),
                 }
                 continue;
             }
@@ -48,11 +54,33 @@ pub fn remove_empty_directories(directory: &PathBuf, log: &mut Log) {
 pub fn organize_files(directory: &PathBuf, log_mut: Arc<Mutex<Log>>) {
     // iterate recursively through the directory
 
-    // find all entries 
+    // check if there if a log file in the directory
+    let log_file = directory.join(LOG_FILE_NAME);
+    let mut created_dirs = Vec::new();
+
+    if log_file.exists() {
+        // read the log file and restore the state
+        let mut log = log_mut.lock().unwrap();
+        *log = log_from_file(&log_file);
+        created_dirs = log.created_directories().clone();
+        log_info(&format!(
+            "Restored state from log file: {}",
+            log_file.display()
+        ));
+    } else {
+        log_info("No log file found, starting fresh.");
+    }
+
+    // find all entries
     let entries: Vec<_> = WalkDir::new(directory)
         .into_iter()
         .filter_map(Result::ok)
         .filter(|e| e.file_type().is_file())
+        .filter(|e| {
+            let path = e.path();
+            // keep only the files that were not organized by another run of the program
+            !created_dirs.iter().any(|dir| path.starts_with(dir)) && path != log_file
+        })
         .collect();
 
     // use parallel iterator to process files concurrently
@@ -73,7 +101,7 @@ pub fn organize_files(directory: &PathBuf, log_mut: Arc<Mutex<Log>>) {
                 // create the extension directory if it doesn't exist
                 to_create = directory.join(extension);
             }
-            
+
             match fs::create_dir_all(&to_create) {
                 Ok(_) => {
                     // move the file to the no_extension directory
@@ -81,14 +109,17 @@ pub fn organize_files(directory: &PathBuf, log_mut: Arc<Mutex<Log>>) {
                     let mut log = log_mut.lock().unwrap();
                     log.create_directory(to_create);
                     move_file(path, new_path.as_path(), &mut *log);
-                    
                 }
                 Err(e) => {
-                    eprintln!("Failed to create directory {}: {}", to_create.display(), e);
+                    log_error(&format!(
+                        "Failed to create directory {}: {}",
+                        to_create.display(),
+                        e
+                    ));
                     // do nothing
                 }
             }
-            
+
             // lock the log for writting
         }
     });
@@ -119,6 +150,10 @@ pub fn move_file(old_path: &Path, new_path: &Path, log: &mut Log) {
 
     match fs::rename(old_path, &candidate) {
         Ok(_) => log.move_file(old_path_save, candidate),
-        Err(e) => eprintln!("Failed to move file {}: {}", old_path.display(), e),
+        Err(e) => log_error(&format!(
+            "Failed to move file {}: {}",
+            old_path.display(),
+            e
+        )),
     }
 }
